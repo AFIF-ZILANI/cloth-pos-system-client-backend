@@ -19,7 +19,7 @@ export const UserService = {
                 name: data.fullName,
                 email: data.email,
                 phone: data.phone,
-                password: data.hashedPassword,
+                password_hash: data.hashedPassword,
                 role: data.role,
             },
             select: {
@@ -40,7 +40,7 @@ export const UserService = {
             select: {
                 id: true,
                 email: true,
-                password: true,
+                password_hash: true,
                 role: true,
                 refresh_token: true,
             },

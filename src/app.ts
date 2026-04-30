@@ -8,11 +8,18 @@ import { csrf } from 'hono/csrf'
 import { HTTPException } from 'hono/http-exception'
 import { AppError } from '@/utils/AppError'
 import { sendError } from '@/utils/response'
-import authRouter from '@/routes/auth.route'
 import productRouter from './routes/product.route'
 import categoryRouter from './routes/category.route'
+import purchaseRouter from './routes/purchase.route'
+import saleRouter from './routes/sale.route'
+import dashboardRouter from './routes/dashbord.route'
+import customerRouter from './routes/customer.route'
+import analyticsRouter from './routes/analytics.route'
+import { requireAuth } from './middleware/auth.middleware'
+import { syncUser } from './middleware/authSyncUser.middleware'
+import type { AppEnv } from './types'
 
-export const app = new Hono()
+export const app = new Hono<AppEnv>()
 
 const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') ?? [
     'http://localhost:3000',
@@ -35,7 +42,6 @@ app.use('*', secureHeaders({
     referrerPolicy: 'strict-origin-when-cross-origin',
 }))
 
-
 const isDev = process.env.NODE_ENV === 'development'
 
 // --- CSRF Protection (skip in dev) ---
@@ -49,7 +55,7 @@ app.use('*', cors({
     allowMethods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
     exposeHeaders: ['X-Request-Id'],
-    credentials: isDev ? false : true, // credentials: true is incompatible with origin: '*'
+    credentials: isDev ? false : true,
     maxAge: 86400,
 }))
 
@@ -64,25 +70,37 @@ app.use('*', rateLimiter({
         c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown',
 }))
 
-app.use('/api/auth/*', rateLimiter({
-    windowMs: 15 * 60_000,
-    limit: 10,
-    keyGenerator: (c) =>
-        c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown',
-}))
-
 // --- Logging ---
 app.use('*', logger())
 
-// --- Health Check ---
-app.get('/api/health', (c) =>
+// --- Public routes (no auth required) ---
+app.get('/health', (c) =>
     c.json({ status: 'ok', timestamp: new Date().toISOString() })
 )
 
+// --- Auth middleware for all /api/* routes ---
+// Must be registered BEFORE app.route() calls
+app.use('/api/*', requireAuth, syncUser)
+
+// --- Auth test (useful during development) ---
+if (isDev) {
+    app.get('/api/auth-test', (c) =>
+        c.json({
+            clerkUserId: c.get('clerkUserId'),
+            userId: c.get('userId'),
+            userRole: c.get('userRole'),
+        })
+    )
+}
+
 // --- Routes ---
-app.route('/api/auth', authRouter)
 app.route('/api/products', productRouter)
 app.route('/api/categories', categoryRouter)
+app.route('/api/purchase', purchaseRouter)
+app.route('/api/sales', saleRouter)
+app.route('/api/dashboard', dashboardRouter)
+app.route('/api/analytics', analyticsRouter)
+app.route('/api/customers', customerRouter)
 
 // --- Error Handling ---
 app.onError((err, c) => {

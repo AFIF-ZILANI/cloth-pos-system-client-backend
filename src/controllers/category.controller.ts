@@ -1,6 +1,7 @@
 import type { Context } from "hono";
 import { sendError, sendSuccess } from "@/utils/response";
 import prisma from "@/lib/prisma";
+import type { UpdateCategory } from "@/schemas/category.schema";
 
 export const categoryController = {
     async createCategory(c: Context) {
@@ -50,6 +51,7 @@ export const categoryController = {
             data: {
                 name,
                 description,
+                slug: name.toLowerCase().replace(/\s+/g, "-"),
                 parent_id: parent_id || null,
             }
         });
@@ -70,6 +72,13 @@ export const categoryController = {
                         id: true,
                         name: true,
                         description: true,
+                        children: {
+                            select: {
+                                id: true,
+                                name: true,
+                                description: true,
+                            }
+                        }
                     }
                 }
             }
@@ -78,10 +87,80 @@ export const categoryController = {
     },
 
     async updateCategory(c: Context) {
+        const body = c.get("validatedBody") as UpdateCategory;
+        const { id, name, description } = body;
+
+        const category = await prisma.category.findUnique({
+            where: {
+                id
+            }
+        });
+
+        if (!category) {
+            return sendError(c, "Category not found", "NOT_FOUND", 404);
+        }
+
+        await prisma.category.update({
+            where: {
+                id
+            },
+            data: {
+                name,
+                description,
+            }
+        });
         return sendSuccess(c, {}, "Category updated successfully", 200);
     },
 
     async deleteCategory(c: Context) {
+        const { id } = await c.req.json();
+        if (!id || typeof id !== "string" || id.trim() === "") {
+            return sendError(c, "Invalid ID", "BAD_REQUEST", 400);
+        }
+
+        const category = await prisma.category.findUnique({
+            where: { id },
+            include: {
+                children: true,
+            }
+        });
+
+        if (!category) {
+            return sendError(c, "Category not found", "NOT_FOUND", 404);
+        }
+
+        const childrenIds = category.children.map((child) => child.id);
+
+        await prisma.$transaction(async (tx) => {
+
+            const hasProductsLinked = await tx.product.findMany({
+                where: {
+                    category_id: {
+                        in: [id, ...childrenIds],
+                    },
+                },
+            });
+
+            if (hasProductsLinked.length > 0) {
+
+                throw new Error("Category has products linked", {
+                    cause: {
+                        code: "INVALID_INPUT",
+                        statusCode: 400,
+                    }
+                });
+            }
+
+            if (childrenIds.length > 0) {
+                await tx.category.deleteMany({
+                    where: { id: { in: childrenIds } },
+                });
+            }
+            await tx.category.delete({
+                where: { id },
+            });
+        });
+
         return sendSuccess(c, {}, "Category deleted successfully", 200);
     },
 };

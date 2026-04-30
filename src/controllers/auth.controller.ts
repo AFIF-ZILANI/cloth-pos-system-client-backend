@@ -31,7 +31,6 @@ function clearAuthCookies(c: Context) {
 // ── Controller ───────────────────────────────────────────────────────────────
 
 export const AuthController = {
-
     async register(c: Context) {
         const data = c.get("validatedBody") as CreateUser
 
@@ -72,7 +71,7 @@ export const AuthController = {
                 throw new AppError("Invalid credentials", "INVALID_CREDENTIALS", 401)
             }
 
-            const passwordMatch = await verifyPassword(data.password, existing.password)
+            const passwordMatch = await verifyPassword(data.password, existing.password_hash)
             if (!passwordMatch) {
                 throw new AppError("Invalid credentials", "INVALID_CREDENTIALS", 401)
             }
